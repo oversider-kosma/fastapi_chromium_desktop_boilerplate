@@ -1,0 +1,1 @@
+Boilerplate for desktop app with FastAPI as a backend and Ungoogled Chromium as a frontend
