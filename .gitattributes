@@ -1,0 +1,47 @@
+* text=auto
+
+*.html  text
+*.css   text
+*.js    text
+*.jsx   text
+*.json  text
+*.svg   text
+
+*.py    text
+*.pip   text
+*.toml  text
+*.yaml  text
+*.yml   text
+
+uv.lock text
+
+*.md    text
+*.txt   text
+.gitignore  text
+.editorconfig   text
+
+.build_no   text
+.python_version text
+
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.webp  binary
+*.webm  binary
+*.ico   binary
+*.pdf   binary
+*.woff  binary
+*.woff2 binary
+*.zip   binary
+*.7z    binary
+*.gz    binary
+*.rar   binary
+
+LICENSE text
+
+*.sh     text eol=lf
+Dockerfile text eol=lf
+
+*.bat      text eol=crlf
+*.cmd      text eol=crlf
