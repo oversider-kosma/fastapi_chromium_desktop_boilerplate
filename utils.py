@@ -171,7 +171,7 @@ def get_description() -> str:
     """Fetches the project description from pyproject.toml."""
     data = _read_pyproject_toml()
     if data and "project" in data:
-        return data["project"].get("description", "")
+        return data["project"].get("description", "").strip()
     return ""
 
 
@@ -195,4 +195,8 @@ if __name__ == "__main__":
     
     if 'get_name' in sys.argv:
         print(get_name())
+        sys.exit(0)
+
+    if 'get_description' in sys.argv:
+        print(get_description())
         sys.exit(0)
