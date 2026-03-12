@@ -12,6 +12,7 @@ wheels/
 # Nuitka build files
 *.build/
 *.dist/
+.nuitka_cache/
 
 build_assets/
 vendor/*chrom*.*
