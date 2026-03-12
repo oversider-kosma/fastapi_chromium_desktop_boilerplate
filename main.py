@@ -5,108 +5,119 @@ import tempfile
 import threading
 import time
 from pathlib import Path
+from typing import List, Optional, Any
 
 import psutil
 import requests
 
-from config import (CHROMIUM_DIR, CHROMIUM_REPACKED_ZIP, CLEAR_OLD_VERSIONS,
-                    DEFAULT_BG_COLOR, CHROMIUM_ADDITIONAL_LAUNCH_ARGS, VENDOR_DIR, WIN_HEIGHT,
-                    WIN_WIDTH)
+from config import (CHROMIUM_ADDITIONAL_LAUNCH_ARGS, CHROMIUM_DIR,
+                    CLEAR_OLD_VERSIONS, DEFAULT_BG_COLOR, 
+                    WIN_HEIGHT, WIN_WIDTH)
 from server import run_server
-from utils import clear_old_caches, decompress_zstd_archive, get_base_path, get_description, get_free_port, get_name, get_version, kill_proc_tree, print_current_dir, remove_nuitka_splash
+from utils import (clear_old_caches, fetch_chromium, get_base_path,
+                   get_free_port, kill_proc_tree, remove_nuitka_splash)
 
 
+def main() -> None:
+    # 1. Early preparations
+    base_path: Path = get_base_path()
+    
+    # 2. Background Tasks: Cleanup and Fetching
+    if CLEAR_OLD_VERSIONS:
+        print("[*] Starting background cache cleanup...")
+        cleanup_thread: threading.Thread = threading.Thread(target=clear_old_caches, daemon=True)
+        cleanup_thread.start()
 
+    print("[*] Fetching client in background...")
+    fetching_thread: threading.Thread = threading.Thread(target=fetch_chromium, daemon=True)
+    setattr(fetching_thread, 'chromium_fetched', False)
+    fetching_thread.start()
 
-def main():
-    # some preparations
-    base_path = get_base_path()
-
-    # launch backend
-    port = get_free_port()
-    server_url = f"http://127.0.0.1:{port}"
+    # 3. Launch backend
+    port: int = get_free_port()
+    server_url: str = f"http://127.0.0.1:{port}"
     print(f"[*] Starting server on 127.0.0.1:{port}...")
-    server_thread = threading.Thread(target=run_server, args=(port,), daemon=True)
+    
+    server_thread: Any = threading.Thread(target=run_server, args=(port,), daemon=True)
     server_thread.start()
 
-    
-    # fetch chromium
-    print(f"[*] Fetching client...")
-    zip_file_name = base_path / VENDOR_DIR / CHROMIUM_REPACKED_ZIP
-    target_dir = base_path / CHROMIUM_DIR
-    decompress_zstd_archive(zip_file_name, base_path)
-    print(f"[*] Cleint fetched into {target_dir}")
-    
+    # 4. Readiness check
+    print("[*] Waiting for server and client readiness...")
+    server_ready: bool = False
+    start_time: float = time.time()
+    timeout: int = 60 
 
-    # ensure server has started
-    print("[*] Waiting for server readiness...")
     while True:
-        try:
-            response = requests.get(f"{server_url}/hello", timeout=1)
-            if response.status_code == 200:
-                print("[+] Server is ready!")
-                break
-        except requests.exceptions.RequestException as e:
-            time.sleep(0.5)
+        if not server_ready:
+            try:
+                response = requests.get(f"{server_url}/hello", timeout=1)
+                if response.status_code == 200:
+                    print("[+] Server is ready!")
+                    server_ready = True
+            except requests.exceptions.RequestException:
+                pass
+        
+        # Check if chromium is fetched (attribute updated from inside fetch_chromium thread)
+        if server_ready and getattr(fetching_thread, 'chromium_fetched', False):
+            break
+            
+        if time.time() - start_time > timeout:
+            print("[!] Timeout waiting for resources. Exiting...")
+            sys.exit(1)
+            
+        time.sleep(0.5)
 
-
-    # starting client
-    chrome_path = base_path / CHROMIUM_DIR / "chrome.exe"
+    # 5. Launch chromium
+    chrome_path: Path = base_path / CHROMIUM_DIR / "chrome.exe"
     print(f"[*] Looking for chrome at: {chrome_path}")
+    
+    chrome_proc: Optional[subprocess.Popen] = None
+    
     with tempfile.TemporaryDirectory() as tmp_data_dir:
         try:
-            user_data_dir = Path(tmp_data_dir) / "Data"
+            user_data_dir: Path = Path(tmp_data_dir) / "Data"
             os.makedirs(user_data_dir, exist_ok=True)
             
-            launch_cmd = [chrome_path, 
-                        f"--app={server_url}", 
-                        f'--user-data-dir={user_data_dir}',
-                        f'--window-size={WIN_WIDTH},{WIN_HEIGHT}',
-                        f'defaullt-background-color={DEFAULT_BG_COLOR}']
+            launch_cmd: List[str] = [
+                str(chrome_path), 
+                f"--app={server_url}", 
+                f'--user-data-dir={user_data_dir}',
+                f'--window-size={WIN_WIDTH},{WIN_HEIGHT}',
+                f'--default-background-color={DEFAULT_BG_COLOR}'
+            ]
             launch_cmd.extend([f"--{arg}" for arg in CHROMIUM_ADDITIONAL_LAUNCH_ARGS])
 
-            print('Launching chromium as: ', ' '.join(str(x) for x in launch_cmd))
+            print('Launching chromium as:', ' '.join(launch_cmd))
             chrome_proc = subprocess.Popen(launch_cmd)
             print(f"[+] Chromium started with PID: {chrome_proc.pid}")
         except FileNotFoundError:
-            print(f"Couldn't find unpacked chromium-bin")
-            sys.exit(0)
+            print(f"[!] Error: Couldn't find unpacked chromium-bin at {chrome_path}")
+            sys.exit(1)
 
         remove_nuitka_splash()
 
-
-        # watching client
-        print("[*] Monitoring Chromium, process")
+        # 6. Monitor Loop
+        print("[*] Monitoring Chromium process...")
         try:
-            while True:
-                # Check if front is alive
-                if not hasattr(chrome_proc, "pid") or not psutil.pid_exists(chrome_proc.pid):
+            while chrome_proc:
+                if not psutil.pid_exists(chrome_proc.pid) or chrome_proc.poll() is not None:
                     print("[!] Chromium closed. Shutting down...")
                     break
-                
-                # Check for zombi case
-                if chrome_proc.poll() is not None:
-                    print("[!] Chromium process terminated. Shutting down...")
-                    break                
                 time.sleep(0.5)
         
-            # gracefull exit. Lets clean up.
-            if CLEAR_OLD_VERSIONS:
-                print("[!] Gracefull exit. Clearing old caches...")
-                clear_old_caches()
-
         except KeyboardInterrupt:
             print("\n[!] Interrupted by user.")
             
         finally:
-            if hasattr(chrome_proc, "pid"):
+            if chrome_proc and psutil.pid_exists(chrome_proc.pid):
                 kill_proc_tree(chrome_proc.pid)
 
             print("[*] Cleaning up and exiting...")
-  
-            server_thread.server.should_exit = True
-            server_thread.join()
-
+            
+            if hasattr(server_thread, 'server'):
+                server_thread.server.should_exit = True
+            
+            server_thread.join(timeout=2)
             sys.exit(0) 
 
 

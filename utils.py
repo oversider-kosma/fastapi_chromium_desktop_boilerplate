@@ -6,34 +6,35 @@ import subprocess
 import sys
 import tarfile
 import tempfile
-from pathlib import Path
 import threading
+from pathlib import Path
+from typing import Optional, Any, Generator
 
 import psutil
 import toml
 import zstandard
 
 from contextlib import contextmanager
-
-
 from config import BUILD_NO_FILE, CHROMIUM_DIR, CHROMIUM_REPACKED_ZIP, VENDOR_DIR
 
 
-def get_base_path():
+def get_base_path() -> Path:
+    """Returns the application base directory, handling frozen (Nuitka/PyInstaller) environments."""
     if getattr(sys, 'frozen', False):
         return Path(sys.executable).parent.resolve()
     else:
         return Path(__file__).parent.resolve()
 
 
-def get_free_port():
-    """Находит свободный userspace порт"""
+def get_free_port() -> int:
+    """Finds a free userspace port."""
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind(('', 0))
         return s.getsockname()[1]
 
 
-def compress_folder_to_zstd(folder_path, output_archive, compression_level=3, threads=-1):
+def compress_folder_to_zstd(folder_path: str | Path, output_archive: str | Path, compression_level: int = 3, threads: int = -1) -> None:
+    """Archives a folder into a tar file using Zstandard compression."""
     folder_path = Path(folder_path)
     cctx = zstandard.ZstdCompressor(level=compression_level, threads=threads)
     with open(output_archive, 'wb') as f_out:
@@ -42,7 +43,8 @@ def compress_folder_to_zstd(folder_path, output_archive, compression_level=3, th
                 tar.add(folder_path, arcname=folder_path.name)
 
 
-def decompress_zstd_archive(archive_path, extract_to):
+def decompress_zstd_archive(archive_path: str | Path, extract_to: str | Path) -> None:
+    """Decompresses a .tar.zstd archive to the specified directory."""
     dctx = zstandard.ZstdDecompressor()
     with open(archive_path, 'rb') as f_in:
         with dctx.stream_reader(f_in) as reader:
@@ -50,48 +52,48 @@ def decompress_zstd_archive(archive_path, extract_to):
                 tar.extractall(path=extract_to)
 
 
-def bumb():
-    '''bump but for build_no, so it is bumb'''
+def bumb() -> None:
+    """bump but for build_no, so it is bumb"""
     fpath = get_base_path() / BUILD_NO_FILE
     try:
         with open(fpath, 'r') as fp:
-            build_no = fp.read()
-            build_no = int(build_no)
+            build_no = int(fp.read().strip())
     except Exception:
         build_no = 0
     build_no += 1
     with open(fpath, 'w') as fp:
-        fp.write(f"{build_no}")
+        fp.write(str(build_no))
 
 
-def remove_nuitka_splash():
-    if "NUITKA_ONEFILE_PARENT" in os.environ:
+def remove_nuitka_splash() -> None:
+    """Hides the Nuitka splash screen and signals readiness to the parent process."""
+    parent_pid = os.environ.get("NUITKA_ONEFILE_PARENT")
+    if parent_pid:
         splash_filename = os.path.join(
             tempfile.gettempdir(),
-            "onefile_%d_splash_feedback.tmp" % int(os.environ["NUITKA_ONEFILE_PARENT"]),
+            f"onefile_{parent_pid}_splash_feedback.tmp",
         )
         if os.path.exists(splash_filename):
             os.unlink(splash_filename)
+        
+        # Signal readiness using Windows API
+        ctypes.windll.kernel32.SetEvent(int(parent_pid))
 
-    if "NUITKA_ONEFILE_PARENT" in os.environ:
-        ctypes.windll.kernel32.SetEvent(int(os.environ["NUITKA_ONEFILE_PARENT"]))
 
-
-def _read_pyproject_toml():
+def _read_pyproject_toml() -> Optional[dict[str, Any]]:
+    """Reads and parses the pyproject.toml file if it exists."""
     pyproject_toml_file = Path(__file__).parent / "pyproject.toml"
     if pyproject_toml_file.exists() and pyproject_toml_file.is_file():
         return toml.load(pyproject_toml_file)
     return None
 
-def print_current_dir():
-    print("base_path:", get_base_path())
-    print("cwd:", os.getcwd())
 
-def clear_old_caches():
+def clear_old_caches() -> None:
+    """Deletes old version cache directories based on semantic versioning (x.x.x.x)."""
     base_dir = get_base_path()
     try:
-        current = tuple(map(int, base_dir.name.split('.')))
-    except:
+        current_version = tuple(map(int, base_dir.name.split('.')))
+    except (ValueError, AttributeError):
         return
 
     to_delete = []
@@ -99,21 +101,22 @@ def clear_old_caches():
         entry = entry.resolve()
         if entry.is_dir() and entry != base_dir:
             try:
-                some = tuple(map(int, entry.name.split('.')))
-                if len(some) != 4:
+                version_parts = tuple(map(int, entry.name.split('.')))
+                if len(version_parts) != 4:
                     continue
-                if some < current:
+                if version_parts < current_version:
                     if (entry / BUILD_NO_FILE).is_file():
                         to_delete.append(entry)
             except ValueError:
                 pass
     
     for entry in to_delete:
-        print(f"[!] Deleting old version cache {entry}")
-        shutil.rmtree(entry)
+        print(f"[!] Deleting old version cache: {entry}")
+        shutil.rmtree(entry, ignore_errors=True)
 
 
-def kill_proc_tree(pid):
+def kill_proc_tree(pid: int) -> None:
+    """Recursively terminates a process and all its children by PID."""
     try:
         parent = psutil.Process(pid)
         children = parent.children(recursive=True)
@@ -124,64 +127,64 @@ def kill_proc_tree(pid):
     except psutil.NoSuchProcess:
         pass
 
+
 @contextmanager
-def managed_process(*args, **kwargs):
+def managed_process(*args: Any, **kwargs: Any) -> Generator[subprocess.Popen, None, None]:
+    """Context manager to run a process and ensure its entire process tree is terminated on exit."""
     proc = subprocess.Popen(*args, **kwargs)
     try:
         yield proc
     finally:
         kill_proc_tree(proc.pid)
 
-def fetch_chromium():
+
+def fetch_chromium() -> None:
+    """Extracts the Chromium binary from the archive and updates the thread status."""
     threading.current_thread().chromium_fetched = False
     base_path = get_base_path()
-    zip_file_name = base_path / VENDOR_DIR / CHROMIUM_REPACKED_ZIP
+    zip_file_path = base_path / VENDOR_DIR / CHROMIUM_REPACKED_ZIP
     target_dir = base_path / CHROMIUM_DIR
-    decompress_zstd_archive(zip_file_name, base_path)
-    print(f"[*] Cleint fetched into {target_dir}")
+    
+    decompress_zstd_archive(zip_file_path, base_path)
+    print(f"[*] Chromium extracted into {target_dir}")
     threading.current_thread().chromium_fetched = True
 
 
-
-
-def get_version():
-    '''fetch version from pyproject.toml and join it with build number'''
+def get_version() -> str:
+    """Fetches the version from pyproject.toml and appends the build number."""
     data = _read_pyproject_toml()
-    if data is None:
-        version = "0.0.0"
-    else:
-        if "project" in data and "version" in data["project"]:
-            version = data["project"]["version"]
+    version = "0.0.0"
+    if data and "project" in data:
+        version = data["project"].get("version", "0.0.0")
 
     build_no_path = get_base_path() / BUILD_NO_FILE
     if not build_no_path.exists():
-        with open(build_no_path, "w") as f:
-            f.write("1")
+        build_no_path.write_text("1")
         build_no = "1"
     else:
-        with open(build_no_path, "r") as f:
-            build_no = f.read().strip()
-    version_string = f"{version}.{build_no}"
-    return version_string
+        build_no = build_no_path.read_text().strip()
+    
+    return f"{version}.{build_no}"
 
-def get_description():
-    '''fetch description from pyproject.toml'''
-    data = _read_pyproject_toml()
-    if data is None:
-        return ""
-    if "project" in data and "description" in data["project"]:
-        return data["project"]["description"]
 
-def get_name():
-    '''fetch project name from pyproject.toml'''
+def get_description() -> str:
+    """Fetches the project description from pyproject.toml."""
     data = _read_pyproject_toml()
-    if data is None:
-        return ""
-    if "project" in data and "name" in data["project"]:
-        return data["project"]["name"]
+    if data and "project" in data:
+        return data["project"].get("description", "")
+    return ""
+
+
+def get_name() -> str:
+    """Fetches the project name from pyproject.toml."""
+    data = _read_pyproject_toml()
+    if data and "project" in data:
+        return data["project"].get("name", "")
+    return ""
+
 
 if __name__ == "__main__":
-    # most of this is needed for build purpuse
+    # Command-line interface for build purposes
     if 'bumb' in sys.argv: 
         bumb()
         sys.exit(0)

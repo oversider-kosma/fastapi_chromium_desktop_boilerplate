@@ -7,7 +7,7 @@ class AppServer(uvicorn.Server):
         # Redefine to prevent uvicorn from intercepting Ctrl+C
         pass
 
-def run_server(port):
+def run_server(port) -> None:
     uvi_config = uvicorn.Config(
         app=app, 
         host='127.0.0.1', 
