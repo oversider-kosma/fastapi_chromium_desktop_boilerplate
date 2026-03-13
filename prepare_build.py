@@ -1,9 +1,12 @@
 import os
 import shutil
-import subprocess
+import sys
+import tarfile
 import tempfile
 import platform
 from pathlib import Path
+
+
 
 from nuitka.plugins.PluginBase import NuitkaPluginBase
 
@@ -13,8 +16,17 @@ from nuitka.Tracing import plugins_logger
 from tqdm import tqdm
 import requests
 
-from utils import compress_folder_to_zstd
-from config import *
+plugin_dir = os.path.dirname(os.path.abspath(__file__))
+if plugin_dir not in sys.path:
+    sys.path.insert(0, plugin_dir)
+
+from config import ASSETS, BUILD_ASSETS_DIR, CHROMIUM_DIR, CHROMIUM_REPACKED_ZIP, VENDOR_DIR  # noqa: E402
+from utils import compress_folder_to_zstd  # noqa: E402
+from build_asset import BuildAsset  # noqa: E402
+
+PLATFORM = platform.system()
+ARCH_IS_64 = platform.machine().endswith('64')
+
 
 class Prebuild(NuitkaPluginBase):
     plugin_name = "prebuild"
@@ -31,12 +43,20 @@ class Prebuild(NuitkaPluginBase):
             return
 
         plugins_logger.info(f"Target {repacked_path} not found. Starting preparation...")
-        if platform.system() != "Windows":
-            self.sysexit(f"Fow now, auto-creation of {Path(VENDOR_DIR / CHROMIUM_REPACKED_ZIP)} is currently Windows-only. On other systems it must be provided manualy.")
+        supported_system = PLATFORM in ('Windows', 'Linux') and ARCH_IS_64
+        if not supported_system:
+            self.sysexit(f"Fow now, auto-creation of {Path(VENDOR_DIR) / CHROMIUM_REPACKED_ZIP} is currently Windows x64 and Linux x64. \n"
+                         f"On other systems it must be provided manualy.")
 
-        for asset in ASSETS.values():
+        for asset in ASSETS[PLATFORM].values():
             self.prepare_asset(asset)
-        self.repack_chromium()
+
+        if platform.system() == "Windows":
+            self._repack_chromium_win()
+        elif platform.system() == "Linux":
+            self._repack_chromium_lin()
+        else:
+            assert False, "Unsupported patform"
 
         if not repacked_path.exists():
             self.sysexit("Failed to create repacked chromium archive.")
@@ -63,22 +83,8 @@ class Prebuild(NuitkaPluginBase):
             if not asset.is_intact():
                 self.sysexit(f"Failed to prepare required asset {asset.filename}")
 
-    def repack_chromium(self) -> None:
-        exe7z = self.base_path / ASSETS['7zip'].path
-        orig_7z = self.base_path / ASSETS['chromium'].path
-        repack_zip = self.base_path / VENDOR_DIR / CHROMIUM_REPACKED_ZIP
-
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
-            plugins_logger.info(f"Extracting {orig_7z.name}...")
-
-            sevenzip_cmd = [str(exe7z), 'x', str(orig_7z), f'-o{tmp_dir}', '-y']
-            _, stderr, exit_code = executeProcess(command=sevenzip_cmd)
-            if exit_code != 0:
-                self.sysexit(f"7zip failed with exit code {exit_code}. Error: {stderr}")
-
-
-            content_dirs = [d for d in tmp_path.iterdir() if d.is_dir()]
+    def _pack_chromium_to_zip(self, unpacked_path: Path, target_zip):
+            content_dirs = [d for d in unpacked_path.iterdir() if d.is_dir()]
             if not content_dirs:
                 self.sysexit("Extracted archive is empty or contains no directories.")
 
@@ -86,10 +92,43 @@ class Prebuild(NuitkaPluginBase):
             # the archive name directly. Given there's only one
             # subfolder, let's keep it this way
             src_folder = content_dirs[0]
-            target_folder = tmp_path / CHROMIUM_DIR
+            target_folder = unpacked_path / CHROMIUM_DIR
 
             if src_folder != target_folder:
                 shutil.move(str(src_folder), str(target_folder))
 
-            plugins_logger.info(f"Compresing to ZSTD: {repack_zip.name}")
-            compress_folder_to_zstd(target_folder, repack_zip)
+            plugins_logger.info(f"Compresing to ZSTD: {target_zip.name}")
+            compress_folder_to_zstd(target_folder, target_zip)
+
+    def _repack_chromium_win(self) -> None:
+        exe7z = self.base_path / ASSETS[PLATFORM]['7zip'].path
+        orig_7z = self.base_path / ASSETS[PLATFORM]['chromium'].path
+        repack_zip = self.base_path / VENDOR_DIR / CHROMIUM_REPACKED_ZIP
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            plugins_logger.info(f"Extracting {orig_7z.name}...")
+
+            sevenzip_cmd = [str(exe7z), 'x', str(orig_7z), f'-o{tmp_dir}', '-y']
+            stderr, exit_code = executeProcess(command=sevenzip_cmd)[-2:]
+            if exit_code != 0:
+                self.sysexit(f"7zip failed with exit code {exit_code}. Error: {stderr}")
+            self._pack_chromium_to_zip(Path(tmp_dir), repack_zip)
+
+
+
+    def _repack_chromium_lin(self) -> None:
+        orig_xz = self.base_path / ASSETS[PLATFORM]['chromium'].path
+        repack_zip = self.base_path / VENDOR_DIR / CHROMIUM_REPACKED_ZIP
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            self._lin_extract_tarxz(orig_xz, Path(tmp_dir))
+            self._pack_chromium_to_zip(Path(tmp_dir), repack_zip)
+
+
+    def _lin_extract_tarxz(self, archive_path: Path|str, extract_path: Path|str) -> None:
+        try:
+            with tarfile.open(archive_path, "r:xz") as tar:
+                tar.extractall(path=extract_path, filter='data')
+        except tarfile.ReadError as e:
+            self.sysexit(f"Error opening tar file: {e}")
+        except Exception as e:
+            self.sysexit(f"An unexpected error occurred: {e}")

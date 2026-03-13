@@ -13,6 +13,7 @@ wheels/
 *.build/
 *.dist/
 .nuitka_cache/
+appimagetool-x86_64.AppImage
 
 build_assets/
 vendor/*chrom*.*
@@ -20,4 +21,4 @@ chromium-bin/
 *.exe
 *__gitignored.py
 
-vendor/ungoogled-chromium-win64.zip
+vendor/ungoogled-chromium*

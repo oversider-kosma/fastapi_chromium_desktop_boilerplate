@@ -1,5 +1,6 @@
 import ctypes
 import os
+import platform
 import shutil
 import socket
 import subprocess
@@ -15,7 +16,7 @@ import toml
 import zstandard
 
 from contextlib import contextmanager
-from config import BUILD_NO_FILE, CHROMIUM_DIR, CHROMIUM_REPACKED_ZIP, VENDOR_DIR
+from config import BUILD_NO_FILE, CHROMIUM_REPACKED_ZIP, VENDOR_DIR
 
 
 def get_base_path() -> Path:
@@ -67,6 +68,9 @@ def bumb() -> None:
 
 def remove_nuitka_splash() -> None:
     """Hides the Nuitka splash screen and signals readiness to the parent process."""
+    if platform.system() != "Windows":
+        return
+
     parent_pid = os.environ.get("NUITKA_ONEFILE_PARENT")
     if parent_pid:
         splash_filename = os.path.join(
@@ -75,9 +79,9 @@ def remove_nuitka_splash() -> None:
         )
         if os.path.exists(splash_filename):
             os.unlink(splash_filename)
-        
+
         # Signal readiness using Windows API
-        ctypes.windll.kernel32.SetEvent(int(parent_pid))
+        ctypes.windll.kernel32.SetEvent(int(parent_pid)) # pyright: ignore[reportAttributeAccessIssue]
 
 
 def _read_pyproject_toml() -> Optional[dict[str, Any]]:
@@ -109,7 +113,7 @@ def clear_old_caches() -> None:
                         to_delete.append(entry)
             except ValueError:
                 pass
-    
+
     for entry in to_delete:
         print(f"[!] Deleting old version cache: {entry}")
         shutil.rmtree(entry, ignore_errors=True)
@@ -128,6 +132,18 @@ def kill_proc_tree(pid: int) -> None:
         pass
 
 
+def wipe_dir(directory):
+    for filename in os.listdir(directory):
+        file_path = os.path.join(directory, filename)
+        try:
+            if os.path.isfile(file_path) or os.path.islink(file_path):
+                os.remove(file_path)
+            elif os.path.isdir(file_path):
+                shutil.rmtree(file_path)
+        except Exception as e:
+            print(f'[!] Error deleting {file_path}: {e}')
+
+
 @contextmanager
 def managed_process(*args: Any, **kwargs: Any) -> Generator[subprocess.Popen, None, None]:
     """Context manager to run a process and ensure its entire process tree is terminated on exit."""
@@ -138,16 +154,17 @@ def managed_process(*args: Any, **kwargs: Any) -> Generator[subprocess.Popen, No
         kill_proc_tree(proc.pid)
 
 
-def fetch_chromium() -> None:
+def fetch_chromium(target_dir) -> None:
     """Extracts the Chromium binary from the archive and updates the thread status."""
-    threading.current_thread().chromium_fetched = False
+    current_thread = threading.current_thread()
+    setattr(current_thread, "chromium_fetched", False)
     base_path = get_base_path()
     zip_file_path = base_path / VENDOR_DIR / CHROMIUM_REPACKED_ZIP
-    target_dir = base_path / CHROMIUM_DIR
-    
-    decompress_zstd_archive(zip_file_path, base_path)
+
+    print(f"[*] Decompressing chromium to {target_dir}")
+    decompress_zstd_archive(zip_file_path, target_dir)
     print(f"[*] Chromium extracted into {target_dir}")
-    threading.current_thread().chromium_fetched = True
+    setattr(current_thread, "chromium_fetched", True)
 
 
 def get_version() -> str:
@@ -159,11 +176,15 @@ def get_version() -> str:
 
     build_no_path = get_base_path() / BUILD_NO_FILE
     if not build_no_path.exists():
-        build_no_path.write_text("1")
+        print(f"[!] {build_no_path} not found!")
+        try:
+            build_no_path.write_text("1")
+        except OSError: # we are readonly if we're inside AppImage
+            pass
         build_no = "1"
     else:
         build_no = build_no_path.read_text().strip()
-    
+
     return f"{version}.{build_no}"
 
 
@@ -185,14 +206,14 @@ def get_name() -> str:
 
 if __name__ == "__main__":
     # Command-line interface for build purposes
-    if 'bumb' in sys.argv: 
+    if 'bumb' in sys.argv:
         bumb()
         sys.exit(0)
 
     if 'get_version' in sys.argv:
         print(get_version())
         sys.exit(0)
-    
+
     if 'get_name' in sys.argv:
         print(get_name())
         sys.exit(0)

@@ -9,14 +9,15 @@ class AppServer(uvicorn.Server):
 
 def run_server(port) -> None:
     uvi_config = uvicorn.Config(
-        app=app, 
-        host='127.0.0.1', 
-        port=port, 
+        app=app,
+        host='127.0.0.1',
+        port=port,
         log_level="info",
         loop="asyncio"
     )
     server = AppServer(config=uvi_config)
-    
+
     # Save the server link in the thread attribute
-    threading.current_thread().server = server
+    current_thread = threading.current_thread()
+    setattr(current_thread,"server", server)
     server.run()
