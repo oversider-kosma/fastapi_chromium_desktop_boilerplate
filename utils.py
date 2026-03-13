@@ -203,6 +203,8 @@ def get_name() -> str:
         return data["project"].get("name", "")
     return ""
 
+def get_repacked_name() -> str:
+    return Path(VENDOR_DIR) / CHROMIUM_REPACKED_ZIP
 
 if __name__ == "__main__":
     # Command-line interface for build purposes
@@ -220,4 +222,8 @@ if __name__ == "__main__":
 
     if 'get_description' in sys.argv:
         print(get_description())
+        sys.exit(0)
+
+    if 'get_repacked_name' in sys.argv:
+        print(get_repacked_name())
         sys.exit(0)

@@ -1,4 +1,16 @@
 @echo off
+if /i "%~1"=="clean" (
+    for /f "usebackq tokens=*" %%a in (`uv run utils.py get_repacked_name`) do set "REPACKED=%%a"
+
+    echo Cleaning up...
+    if exist .nuitka_cache rd /s /q .nuitka_cache
+    if exist build_assets rd /s /q build_assets
+    if exist dist rd /s /q dist
+    if exist "%REPACKED%" del /f /q "%REPACKED%"
+    echo Done!
+    exit /b
+)
+
 echo Build started at %date% %time%
 setlocal enabledelayedexpansion
 
@@ -14,6 +26,18 @@ uv run utils.py bumb || goto :error
 for /f "usebackq tokens=*" %%a in (`uv run utils.py get_version`) do set "VERSION=%%a"
 for /f "usebackq tokens=*" %%a in (`uv run utils.py get_name`) do set "APPNAME=%%a"
 for /f "usebackq tokens=*" %%a in (`uv run utils.py get_description`) do set "DESCRIPTION=%%a"
+
+
+where ccache >nul 2>nul
+if %errorlevel% neq 0 (
+    echo [INFO] ccache was not found in your PATH.
+    echo [INFO] Nuitka builds can be significantly faster with caching enabled.
+    echo [INFO] Consider installing ccache to speed up future compilations.
+    echo [INFO] You can install it via: winget install ccache
+    echo.
+) else (
+    echo [OK] ccache detected. Good. Nuitka will use it for caching.
+)
 
 uv run nuitka ^
     --standalone ^
