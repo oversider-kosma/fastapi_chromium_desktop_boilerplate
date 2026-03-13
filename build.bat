@@ -1,4 +1,9 @@
 @echo off
+setlocal enabledelayedexpansion
+chcp 65001
+set LANG=en_US.UTF-8
+set LC_ALL=C
+
 if /i "%~1"=="clean" (
     for /f "usebackq tokens=*" %%a in (`uv run utils.py get_repacked_name`) do set "REPACKED=%%a"
 
@@ -12,21 +17,15 @@ if /i "%~1"=="clean" (
 )
 
 echo Build started at %date% %time%
-setlocal enabledelayedexpansion
-
-chcp 65001
-set LANG=en_US.UTF-8
-set LC_ALL=C
-
-set NUITKA_CACHE_DIR=.nuitka_cache
 
 uv sync || goto :error
 uv run utils.py bumb || goto :error
+robocopy "misc\favicon" "frontend\static" favicon.ico >nul 2>&1
 
 for /f "usebackq tokens=*" %%a in (`uv run utils.py get_version`) do set "VERSION=%%a"
 for /f "usebackq tokens=*" %%a in (`uv run utils.py get_name`) do set "APPNAME=%%a"
 for /f "usebackq tokens=*" %%a in (`uv run utils.py get_description`) do set "DESCRIPTION=%%a"
-
+set NUITKA_CACHE_DIR=.nuitka_cache
 
 where ccache >nul 2>nul
 if %errorlevel% neq 0 (

@@ -27,7 +27,7 @@ if ! command -v ccache &> /dev/null; then
     echo "Note: install 'ccache' to speed up subsequent Nuitka builds."
 fi
 
-# 1. Проверка инструментов
+# 1. Tools check
 APPIMAGETOOL="./appimagetool-x86_64.AppImage"
 APPIMAGE_URL="https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage"
 if [ ! -f "$APPIMAGETOOL" ]; then
@@ -38,22 +38,22 @@ if [ ! -f "$APPIMAGETOOL" ]; then
         chmod +x "$APPIMAGETOOL"
     fi
     if [ ! -f "$APPIMAGETOOL" ]; then
-        echo "Ошибка: $APPIMAGETOOL не найден. Скачайте его с GitHub AppImageKit."
+        echo "Error: $APPIMAGETOOL not found. Download it from GitHub AppImageKit."
         exit 1
     fi
 fi
 
-# 2. Подготовка и метаданные
+# 2. Preparation and metadata
 uv sync || error_exit $?
 uv run utils.py bumb || error_exit $?
 VERSION=$(uv run utils.py get_version)
 APPNAME=$(uv run utils.py get_name)
 SAFE_NAME="${APPNAME// /_}"
 ICONFILE="misc/icon.png"
+cp "misc/favicon" "frontend/static" favicon.ico > /dev/null 2>&1
 
-
-# 3. Сборка Standalone через Nuitka
-# Используем --standalone вместо --onefile для последующей упаковки
+# 3. Standalone build via Nuitka
+# Use --standalone instead of --onefile for subsequent packaging
 uv run nuitka \
     --standalone \
     --jobs="$(nproc)" \
@@ -67,15 +67,15 @@ uv run nuitka \
     --output-dir=dist \
     main.py || error_exit $?
 
-# 4. Формирование структуры AppDir
+# 4. AppDir structure formation
 APPDIR="dist/${SAFE_NAME}.AppDir"
 rm -rf "$APPDIR"
 mkdir -p "$APPDIR/usr/bin"
 
-# Копируем результат Nuitka (папка main.dist) в AppDir
+# Copy Nuitka output (main.dist folder) to AppDir
 cp -r dist/main.dist/. "$APPDIR/usr/bin/"
 
-# Создаем AppRun (точка входа)
+# Create AppRun (entry point)
 cat <<EOF > "$APPDIR/AppRun"
 #!/bin/bash
 HERE="\$(dirname "\$(readlink -f "\${0}")")"
@@ -84,7 +84,7 @@ exec "\$HERE/usr/bin/main.bin" "\$@"
 EOF
 chmod +x "$APPDIR/AppRun"
 
-# Создаем .desktop файл
+# Create .desktop file
 cat <<EOF > "$APPDIR/${SAFE_NAME}.desktop"
 [Desktop Entry]
 Name=${APPNAME}
@@ -94,10 +94,10 @@ Type=Application
 Categories=Utility;
 EOF
 
-# Копируем иконку (AppImage ищет её в корне AppDir)
+# Copy icon (AppImage looks for it in the AppDir root)
 cp "$ICONFILE" "$APPDIR/${SAFE_NAME}.png"
 
-# 5. Упаковка в AppImage
+# 5. Packaging into AppImage
 export ARCH=x86_64
 $APPIMAGETOOL "$APPDIR" "dist/${APPNAME}_v${VERSION}.AppImage" || error_exit $?
 
