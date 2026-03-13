@@ -53,19 +53,6 @@ def decompress_zstd_archive(archive_path: str | Path, extract_to: str | Path) ->
                 tar.extractall(path=extract_to)
 
 
-def bumb() -> None:
-    """bump but for build_no, so it is bumb"""
-    fpath = get_base_path() / BUILD_NO_FILE
-    try:
-        with open(fpath, 'r') as fp:
-            build_no = int(fp.read().strip())
-    except Exception:
-        build_no = 0
-    build_no += 1
-    with open(fpath, 'w') as fp:
-        fp.write(str(build_no))
-
-
 def remove_nuitka_splash() -> None:
     """Hides the Nuitka splash screen and signals readiness to the parent process."""
     if platform.system() != "Windows":
@@ -167,25 +154,54 @@ def fetch_chromium(target_dir) -> None:
     setattr(current_thread, "chromium_fetched", True)
 
 
-def get_version() -> str:
-    """Fetches the version from pyproject.toml and appends the build number."""
+def get_build_no() -> tuple[str|None, int|None]:
+    """Reads build_no from file if available"""
+    try:
+        data = Path(get_base_path() / BUILD_NO_FILE).read_text()
+        ver = data.strip().split('.')[:3]
+        build_no = int(data.strip().split('.')[3])
+        return '.'.join(ver), build_no
+    except Exception:
+        return None, None
+
+
+def set_build_no(build_no: int | str) -> None:
+    """Writes build_no to file if available"""
+    try:
+        Path(get_base_path() / BUILD_NO_FILE).write_text(f"{_get_version_from_toml()}.{build_no}")
+    except Exception:
+        pass
+
+
+def bumb() -> None:
+    """BUMP but for build_no, so it is BUMB"""
+    build_no_ver, build_no = get_build_no()
+    real_version = _get_version_from_toml()
+    if build_no is None or build_no_ver != real_version:
+        set_build_no(0)
+    else:
+        set_build_no(build_no+1)
+
+
+def _get_version_from_toml() -> str:
+    """Fetches the version from pyproject.toml"""
     data = _read_pyproject_toml()
     version = "0.0.0"
     if data and "project" in data:
         version = data["project"].get("version", "0.0.0")
+    return version
 
-    build_no_path = get_base_path() / BUILD_NO_FILE
-    if not build_no_path.exists():
-        print(f"[!] {build_no_path} not found!")
-        try:
-            build_no_path.write_text("1")
-        except OSError: # we are readonly if we're inside AppImage
-            pass
-        build_no = "1"
+
+def get_version() -> str:
+    """Fetches the version from pyproject.toml and appends the build number."""
+    real_version: str = _get_version_from_toml()
+    build_no: int|None
+    bn_ver, build_no = get_build_no()
+    build_no = build_no or 0
+    if bn_ver == real_version:
+        return f"{bn_ver}.{build_no}"
     else:
-        build_no = build_no_path.read_text().strip()
-
-    return f"{version}.{build_no}"
+        return f"{real_version}.{0}"
 
 
 def get_description() -> str:
