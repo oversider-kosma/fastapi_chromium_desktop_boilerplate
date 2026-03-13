@@ -1,4 +1,4 @@
-from build_assets import BuildAsset
+from build_asset import BuildAsset
 
 # directory to store downloaded 7z and chromium.
 # Gitignored. Needed only for build.
@@ -13,22 +13,28 @@ CHROMIUM_DIR = "chromium-bin"
 # NB: We repack chromium while building the application image mainly for two reasons:
 # 1. zstd can be unpacked faster than lzma thanks to multithreading
 # 2. we don't need to bring the 7zip binary into the built image (see below for why it's needed).
-CHROMIUM_REPACKED_ZIP = "ungoogled-chromium-win64.zip"
+CHROMIUM_REPACKED_ZIP = "ungoogled-chromium.tar.xz"
 
 
 
 # Have to use a binary unarchiver because at the moment the BCJ2 filter is not supported by py7zr.
 # And it seems that the 7z archive provided by portapps contains exactly this type of compression.
-ASSETS = {
-    '7zip': BuildAsset(
-        filename="7zr.exe",
-        url="https://github.com/ip7z/7zip/releases/download/26.00/7zr.exe",
-        sha_256="4bec0bc59836a890a11568b58bd12a3e7b23a683557340562da211b6088058ba"),
+ASSETS ={
+    'Windows': {
+        '7zip': BuildAsset(
+            url="https://github.com/ip7z/7zip/releases/download/26.00/7zr.exe",
+            sha_256="4bec0bc59836a890a11568b58bd12a3e7b23a683557340562da211b6088058ba"),
 
-    "chromium": BuildAsset(
-        filename="ungoogled-chromium-win64.7z",
-        url="https://github.com/portapps/ungoogled-chromium-portable/releases/download/140.0.7339.137-21/ungoogled-chromium-win64.7z",
-        sha_256="85080bf51f51ac5655125b42cf2e0e50ba11a929ca763044ec7f54ec45da49ef")
+        "chromium": BuildAsset(
+            url="https://github.com/portapps/ungoogled-chromium-portable/releases/download/140.0.7339.137-21/ungoogled-chromium-win64.7z",
+            sha_256="85080bf51f51ac5655125b42cf2e0e50ba11a929ca763044ec7f54ec45da49ef")
+    },
+    'Linux': {
+        # Sience linux version is shipped whithin tar.xz we no need for 7zip here
+        "chromium": BuildAsset(
+            url="https://github.com/ungoogled-software/ungoogled-chromium-portablelinux/releases/download/146.0.7680.71-1/ungoogled-chromium-146.0.7680.71-1-x86_64_linux.tar.xz",
+            sha_256="5ad13b142b6de1656382a47f8526e14869770275ed4202b57c66d01f936e5b4b")
+    },
 }
 
 

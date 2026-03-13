@@ -1,12 +1,14 @@
-from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
+from urllib.parse import urlparse
 
-@dataclass(frozen=True, kw_only=True)
+
 class  BuildAsset:
-    filename: str
-    url: str
-    sha_256: str
+    def __init__(self, url: str, sha_256: str, filename=None):
+        self.url = url
+        self.sha_256 = sha_256
+        self.filename = filename or Path(urlparse(url).path).name
+
 
     @property
     def path(self):
