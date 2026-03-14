@@ -32,6 +32,13 @@ uv sync
 
 Everything else required, including Ungoogled Chromium, appimagetool, etc., will be downloaded automatically during the build process. The build result will be inside the `dist` directory.
 
+
+## Running backend independently for dev/debug purpose:
+```bash
+uv run server.py --port 8080
+```
+
+
 ## Plans/TODO/Future:
 * possibly none (most likely)
 * _maybe_: some js <-> python interaction similar to how it's done in eel

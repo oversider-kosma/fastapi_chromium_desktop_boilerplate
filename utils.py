@@ -15,7 +15,7 @@ import psutil
 import toml
 import zstandard
 
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from config import BUILD_NO_FILE, CHROMIUM_REPACKED_ZIP, VENDOR_DIR
 
 
@@ -108,15 +108,13 @@ def clear_old_caches() -> None:
 
 def kill_proc_tree(pid: int) -> None:
     """Recursively terminates a process and all its children by PID."""
-    try:
+    with suppress(psutil.NoSuchProcess):
         parent = psutil.Process(pid)
         children = parent.children(recursive=True)
         for child in children:
             child.kill()
         parent.kill()
         psutil.wait_procs(children + [parent], timeout=3)
-    except psutil.NoSuchProcess:
-        pass
 
 
 def wipe_dir(directory):
@@ -167,10 +165,8 @@ def get_build_no() -> tuple[str|None, int|None]:
 
 def set_build_no(build_no: int | str) -> None:
     """Writes build_no to file if available"""
-    try:
+    with suppress(Exception):
         Path(get_base_path() / BUILD_NO_FILE).write_text(f"{_get_version_from_toml()}.{build_no}")
-    except Exception:
-        pass
 
 
 def bumb() -> None:

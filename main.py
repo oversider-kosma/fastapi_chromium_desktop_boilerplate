@@ -5,17 +5,20 @@ import sys
 import tempfile
 import threading
 import time
+from contextlib import suppress
 from pathlib import Path
-from typing import List, Optional, Any
+from typing import List, Optional
 
 import psutil
 import requests
 
-from config import (CHROMIUM_ADDITIONAL_LAUNCH_ARGS, CHROMIUM_DIR, CLEAR_OLD_VERSIONS, DEFAULT_BG_COLOR,
-                    WIN_HEIGHT, WIN_WIDTH)
+from config import (CHROMIUM_ADDITIONAL_LAUNCH_ARGS, CHROMIUM_DIR,
+                    CLEAR_OLD_VERSIONS, DEFAULT_BG_COLOR, WIN_HEIGHT,
+                    WIN_WIDTH)
 from server import run_server
 from utils import (clear_old_caches, fetch_chromium, get_base_path,
-                   get_free_port, kill_proc_tree, remove_nuitka_splash, wipe_dir)
+                   get_free_port, kill_proc_tree, remove_nuitka_splash,
+                   wipe_dir)
 
 
 def main() -> None:
@@ -48,13 +51,11 @@ def main() -> None:
 
     while True:
         if not server_ready:
-            try:
+            with suppress(requests.exceptions.RequestException):
                 response = requests.get(f"{server_url}/hello", timeout=1)
                 if response.status_code == 200:
                     print("[+] Server is ready!")
                     server_ready = True
-            except requests.exceptions.RequestException:
-                pass
 
         # Check if chromium is fetched (attribute updated from inside fetch_chromium thread)
         if server_ready and getattr(fetching_thread, 'chromium_fetched', False):
@@ -113,12 +114,9 @@ def main() -> None:
             kill_proc_tree(chrome_proc.pid)
 
         print("[*] Cleaning up and exiting...")
-        try:
+        with suppress(Exception):
             wipe_dir(chromium_tmp_dir.name)
-        except Exception:
-            pass
-        finally:
-            chromium_tmp_dir.cleanup()
+        chromium_tmp_dir.cleanup()
 
         if hasattr(server_thread, 'server'):
             server = getattr(server_thread, "server")
