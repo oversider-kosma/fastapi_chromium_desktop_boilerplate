@@ -8,14 +8,14 @@ import sys
 import tarfile
 import tempfile
 import threading
+from contextlib import contextmanager, suppress
 from pathlib import Path
-from typing import Optional, Any, Generator
+from typing import Any, Generator, Optional
 
 import psutil
 import toml
 import zstandard
 
-from contextlib import contextmanager, suppress
 from config import BUILD_NO_FILE, CHROMIUM_REPACKED_ZIP, VENDOR_DIR
 
 
