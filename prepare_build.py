@@ -83,6 +83,14 @@ class Prebuild(NuitkaPluginBase):
             if not asset.is_intact():
                 self.sysexit(f"Failed to prepare required asset {asset.filename}")
 
+
+    def _cut_the_crap(self, where: Path, keep: list[str]):
+         """deletes everything in target_path except keep"""
+         for item in where.iterdir():
+             if item.is_file() and item.name not in keep:
+                 item.unlink()
+
+
     def _pack_chromium_to_zip(self, unpacked_path: Path, target_zip):
             content_dirs = [d for d in unpacked_path.iterdir() if d.is_dir()]
             if not content_dirs:
@@ -94,11 +102,13 @@ class Prebuild(NuitkaPluginBase):
             src_folder = content_dirs[0]
             target_folder = unpacked_path / CHROMIUM_DIR
 
+            self._cut_the_crap(Path(src_folder) / "Locales", keep=['en-US.pak'])
+
             if src_folder != target_folder:
                 shutil.move(str(src_folder), str(target_folder))
 
             plugins_logger.info(f"Compresing to ZSTD: {target_zip.name}")
-            compress_folder_to_zstd(target_folder, target_zip)
+            compress_folder_to_zstd(target_folder, target_zip, compression_level=17)
 
     def _repack_chromium_win(self) -> None:
         exe7z = self.base_path / ASSETS[PLATFORM]['7zip'].path
