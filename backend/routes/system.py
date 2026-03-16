@@ -8,6 +8,12 @@ router = APIRouter()
 async def hello() -> Dict[str, str]:
     return {"status": "ok", "message": "Hello from FastAPI"}
 
+
+@router.get("/.well-known/appspecific/com.chrome.devtools.json")
+async def hello() -> dict:
+    return {}
+
+
 @router.get("/getVersion")
 async def get_version_endpoint() -> Dict[str, str]:
     return {"status": "ok", "version": get_version()}
