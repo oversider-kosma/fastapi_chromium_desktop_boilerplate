@@ -1,4 +1,7 @@
+import sys
+
 from build_asset import BuildAsset
+
 
 # directory to store downloaded 7z and chromium.
 # Gitignored. Needed only for build.
@@ -58,29 +61,35 @@ CHROMIUM_ADDITIONAL_LAUNCH_ARGS = [
     'minimal',
     'hide-scrollbars',
     'bwsi',
-    'disable-breakpad',
     'disable-background-timer-throttling',
     'disable-backgrounding-occluded-windows',
-    'disable-renderer-backgrounding',
+    'disable-breakpad',
     'disable-crush-reporter',
     'disable-default-apps',
     'disable-demo-mode',
-    'disable-dev-tools'
+    'disable-dev-tools',
     'disable-encryption-win',
     'disable-extensions',
+    'disable-gpu-compositing',
+    'disable-gpu-rasterization',
+    'disable-gpu',
     'disable-local-storage',
     'disable-logging',
     'disable-machine-id ',
     'disable-notifications',
+    'disable-renderer-backgrounding',
+    'disable-software-rasterizer',
     'disable-speech-api',
     'disable-touch-drag-drop',
     'disable-translate',
     'disk-cache-size=1',
     'enable-early-process-singleton',
+    'force-dark-mode',
     'in-process-gpu',
-    'instant-process'
+    'instant-process',
     'media-cache-size=1',
     'no-crash-upload',
     'no-default-browser-check',
     'no-first-run',
+    'use-gl=swiftshader',
 ]

@@ -1,4 +1,6 @@
 import ctypes
+import datetime
+import json
 import os
 import platform
 import shutil
@@ -10,13 +12,28 @@ import tempfile
 import threading
 from contextlib import contextmanager, suppress
 from pathlib import Path
+import time
 from typing import Any, Generator, Optional
 
+from platformdirs import user_config_dir
 import psutil
 import toml
 import zstandard
 
 from config import BUILD_NO_FILE, CHROMIUM_REPACKED_ZIP, VENDOR_DIR
+
+
+def report(*args, **kwargs):
+    now = datetime.datetime.now()
+    milliseconds = now.strftime('%f')[:3]
+    time_stamp = now.strftime(f'[%Y-%m-%d %H:%M:%S.{milliseconds}]')
+    print(time_stamp, *args, **kwargs)
+
+def back_report(*args, **kwargs):
+    report("[backend]", *args, **kwargs)
+
+def front_report(*args, **kwargs):
+    report("[frontend]", *args, **kwargs)
 
 
 def get_base_path() -> Path:
@@ -73,9 +90,15 @@ def remove_nuitka_splash() -> None:
 
 def _read_pyproject_toml() -> Optional[dict[str, Any]]:
     """Reads and parses the pyproject.toml file if it exists."""
-    pyproject_toml_file = Path(__file__).parent / "pyproject.toml"
-    if pyproject_toml_file.exists() and pyproject_toml_file.is_file():
-        return toml.load(pyproject_toml_file)
+    with suppress(Exception):
+        toml_file = Path(__file__).parent / "info.toml"
+        if toml_file.exists() and toml_file.is_file():
+            return toml.load(toml_file)
+    with suppress(Exception):
+        toml_file = Path(__file__).parent.parent / "pyproject.toml"
+        if toml_file.exists() and toml_file.is_file():
+            return toml.load(toml_file)
+
     return None
 
 
@@ -102,7 +125,7 @@ def clear_old_caches() -> None:
                 pass
 
     for entry in to_delete:
-        print(f"[!] Deleting old version cache: {entry}")
+        report(f"[app] Deleting old version cache: {entry}")
         shutil.rmtree(entry, ignore_errors=True)
 
 
@@ -126,7 +149,7 @@ def wipe_dir(directory):
             elif os.path.isdir(file_path):
                 shutil.rmtree(file_path)
         except Exception as e:
-            print(f'[!] Error deleting {file_path}: {e}')
+            report(f'[app] Error deleting {file_path}: {e}')
 
 
 @contextmanager
@@ -146,21 +169,46 @@ def fetch_chromium(target_dir) -> None:
     base_path = get_base_path()
     zip_file_path = base_path / VENDOR_DIR / CHROMIUM_REPACKED_ZIP
 
-    print(f"[*] Decompressing chromium to {target_dir}")
+    report(f"[app] Decompressing chromium to {target_dir}")
     decompress_zstd_archive(zip_file_path, target_dir)
-    print(f"[*] Chromium extracted into {target_dir}")
+    report(f"[app] Chromium extracted into {target_dir}")
     setattr(current_thread, "chromium_fetched", True)
+
+
+def load_app_settings() -> dict:
+    config_dir = user_config_dir("vgd2csv")
+    config_path = Path(config_dir) / "settings.json"
+    with suppress(Exception):
+        report(f"[app] Loading settings from {config_path}")
+        if config_path.is_file():
+            with open(config_path, 'r') as fp:
+                return json.load(fp)
+    return dict()
+
+
+def save_app_settings(settings: dict, append=True) -> None:
+    if append:
+        old_one = load_app_settings()
+        old_one.update(settings)
+        settings = old_one
+
+    config_dir = user_config_dir("vgd2csv")
+    config_path = Path(config_dir) / "settings.json"
+    with suppress(Exception):
+        os.makedirs(config_dir, exist_ok=True)
+        report(f"[app] Saving settings to {config_path}")
+        with open(config_path, 'w') as fp:
+            json.dump(settings, fp)
 
 
 def get_build_no() -> tuple[str|None, int|None]:
     """Reads build_no from file if available"""
-    try:
+    with suppress(Exception):
         data = Path(get_base_path() / BUILD_NO_FILE).read_text()
         ver = data.strip().split('.')[:3]
         build_no = int(data.strip().split('.')[3])
         return '.'.join(ver), build_no
-    except Exception:
-        return None, None
+    return None, None
 
 
 def set_build_no(build_no: int | str) -> None:
@@ -217,6 +265,16 @@ def get_name() -> str:
 
 def get_repacked_name() -> str:
     return Path(VENDOR_DIR) / CHROMIUM_REPACKED_ZIP
+
+def get_license_text() -> str:
+    with suppress(Exception):
+        fpath = get_base_path() / "LICENSE"
+        return fpath.read_text()
+    with suppress(Exception):
+        fpath = get_base_path().parent / "LICENSE"
+        return fpath.read_text()
+    return ""
+
 
 if __name__ == "__main__":
     # Command-line interface for build purposes

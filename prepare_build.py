@@ -1,3 +1,4 @@
+from contextlib import suppress
 import os
 import shutil
 import sys
@@ -13,10 +14,11 @@ from nuitka.plugins.PluginBase import NuitkaPluginBase
 from nuitka.utils.Execution import executeProcess
 from nuitka.Tracing import plugins_logger
 
+import toml
 from tqdm import tqdm
 import requests
 
-plugin_dir = os.path.dirname(os.path.abspath(__file__))
+plugin_dir = str(Path(__file__).parent / "app")
 if plugin_dir not in sys.path:
     sys.path.insert(0, plugin_dir)
 
@@ -28,17 +30,27 @@ PLATFORM = platform.system()
 ARCH_IS_64 = platform.machine().endswith('64')
 
 
+def build_info_toml():
+    pyproject_toml = toml.load(Path('pyproject.toml'))
+    project = pyproject_toml['project']
+    info = {k:v for k,v in project.items() if k in ['name', 'version', 'description']}
+    info = {"project": info}
+    with open(Path(__file__).parent / "app" / "info.toml", "w", encoding="utf-8") as fd:
+        toml.dump(info, fd)
+
+
 class Prebuild(NuitkaPluginBase):
     plugin_name = "prebuild"
 
     def __init__(self) -> None:
         self.base_path = Path(__file__).parent.resolve()
         self.prepare_chromium()
+        build_info_toml()
 
     def prepare_chromium(self) -> None:
         assets_dir = self.base_path / BUILD_ASSETS_DIR
         assets_dir.mkdir(parents=True, exist_ok=True)
-        repacked_path = self.base_path / VENDOR_DIR / CHROMIUM_REPACKED_ZIP
+        repacked_path = self.base_path / "app" /VENDOR_DIR / CHROMIUM_REPACKED_ZIP
         if repacked_path.exists():
             return
 
@@ -102,7 +114,10 @@ class Prebuild(NuitkaPluginBase):
             src_folder = content_dirs[0]
             target_folder = unpacked_path / CHROMIUM_DIR
 
-            self._cut_the_crap(Path(src_folder) / "Locales", keep=['en-US.pak'])
+            with suppress(FileNotFoundError):
+                self._cut_the_crap(Path(src_folder) / "Locales", keep=['en-US.pak'])
+            with suppress(FileNotFoundError):
+                self._cut_the_crap(Path(src_folder) / "locales", keep=['en-US.pak'])
 
             if src_folder != target_folder:
                 shutil.move(str(src_folder), str(target_folder))
@@ -113,7 +128,7 @@ class Prebuild(NuitkaPluginBase):
     def _repack_chromium_win(self) -> None:
         exe7z = self.base_path / ASSETS[PLATFORM]['7zip'].path
         orig_7z = self.base_path / ASSETS[PLATFORM]['chromium'].path
-        repack_zip = self.base_path / VENDOR_DIR / CHROMIUM_REPACKED_ZIP
+        repack_zip = self.base_path / "app" / VENDOR_DIR / CHROMIUM_REPACKED_ZIP
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             plugins_logger.info(f"Extracting {orig_7z.name}...")
@@ -124,15 +139,12 @@ class Prebuild(NuitkaPluginBase):
                 self.sysexit(f"7zip failed with exit code {exit_code}. Error: {stderr}")
             self._pack_chromium_to_zip(Path(tmp_dir), repack_zip)
 
-
-
     def _repack_chromium_lin(self) -> None:
         orig_xz = self.base_path / ASSETS[PLATFORM]['chromium'].path
-        repack_zip = self.base_path / VENDOR_DIR / CHROMIUM_REPACKED_ZIP
+        repack_zip = self.base_path / "app" / VENDOR_DIR / CHROMIUM_REPACKED_ZIP
         with tempfile.TemporaryDirectory() as tmp_dir:
             self._lin_extract_tarxz(orig_xz, Path(tmp_dir))
             self._pack_chromium_to_zip(Path(tmp_dir), repack_zip)
-
 
     def _lin_extract_tarxz(self, archive_path: Path|str, extract_path: Path|str) -> None:
         try:
@@ -142,3 +154,14 @@ class Prebuild(NuitkaPluginBase):
             self.sysexit(f"Error opening tar file: {e}")
         except Exception as e:
             self.sysexit(f"An unexpected error occurred: {e}")
+
+
+if __name__ == "__main__":
+    if 'build_info_toml' in sys.argv:
+        build_info_toml()
+        sys.exit(0)
+
+    # shurtcut to run this out of Nuitka's build
+    if 'prepack_chromium' in sys.argv:
+        prebuild = Prebuild()
+        sys.exit(0)
