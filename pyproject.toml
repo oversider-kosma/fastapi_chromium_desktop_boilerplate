@@ -1,11 +1,12 @@
 [project]
 name = "fastapi_chromium_desktop_boilerplate"
-version = "0.3.0"
+version = "0.4.0"
 description = "Boilerplate for a desktop app with FastAPI as the backend and Ungoogled Chromium as the frontend."
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
     "fastapi>=0.135.1",
+    "platformdirs>=4.9.4",
     "psutil>=7.2.2",
     "requests>=2.32.5",
     "toml>=0.10.2",

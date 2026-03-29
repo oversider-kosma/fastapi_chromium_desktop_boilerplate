@@ -16,10 +16,11 @@ wheels/
 appimagetool-x86_64.AppImage
 
 build_assets/
-vendor/*chrom*.*
-chromium-bin/
+app/vendor/*chrom*.*
+app/chromium-bin/
+app/vendor/ungoogled-chromium*
+app/.build_no
+app/info.toml
+app/LICENSE
 *.exe
-*__gitignored.py
-
-vendor/ungoogled-chromium*
-.build_no
+*__gitignored__

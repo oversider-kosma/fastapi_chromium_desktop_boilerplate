@@ -45,12 +45,15 @@ fi
 
 # 2. Preparation and metadata
 uv sync || error_exit $?
-uv run utils.py bumb || error_exit $?
-VERSION=$(uv run utils.py get_version)
-APPNAME=$(uv run utils.py get_name)
+uv run ./app/utils.py bumb || error_exit $?
+VERSION=$(uv run ./app/utils.py get_version)
+APPNAME=$(uv run ./app/utils.py get_name)
 SAFE_NAME="${APPNAME// /_}"
-ICONFILE="misc/icon.png"
-cp "misc/favicon" "frontend/static" favicon.ico > /dev/null 2>&1
+ICONFILE="./resources/icon.png"
+cp "./resources/favicon" "./app/frontend/static" favicon.ico > /dev/null 2>&1
+cp "./LICENSE" "./app/" > /dev/null 2>&1
+uv run prepare_build.py build_info_toml
+
 
 # 3. Standalone build via Nuitka
 # Use --standalone instead of --onefile for subsequent packaging
@@ -58,14 +61,16 @@ uv run nuitka \
     --standalone \
     --jobs="$(nproc)" \
     --assume-yes-for-downloads \
-    --include-data-dir=frontend=frontend \
-    --include-data-dir=vendor=vendor \
-    --include-data-file=pyproject.toml=pyproject.toml \
-    --include-data-file=.build_no=.build_no \
+    --include-data-dir=./app/frontend=frontend \
+    --include-data-dir=./app/vendor=vendor \
+    --include-data-file=./app/info.toml=info.toml \
+    --include-data-file=./app/.build_no=.build_no \
+    --include-data-file=./app/LICENSE=LICENSE \
     --user-plugin=prepare_build.py \
     --enable-plugin=tk-inter \
     --output-dir=dist \
-    main.py || error_exit $?
+    ./app/main.py || error_exit $?
+
 
 # 4. AppDir structure formation
 APPDIR="dist/${SAFE_NAME}.AppDir"
@@ -76,29 +81,37 @@ mkdir -p "$APPDIR/usr/bin"
 cp -r dist/main.dist/. "$APPDIR/usr/bin/"
 
 # Create AppRun (entry point)
-cat <<EOF > "$APPDIR/AppRun"
+# Note: EOF1 is quoted ('EOF1') so that $HERE, $0, $@ are NOT expanded here —
+# they must expand at AppRun runtime inside the AppImage environment.
+cat <<'EOF1' > "$APPDIR/AppRun"
 #!/bin/bash
-HERE="\$(dirname "\$(readlink -f "\${0}")")"
-export PATH="\$HERE/usr/bin:\$PATH"
-exec "\$HERE/usr/bin/main.bin" "\$@"
-EOF
+HERE="$(dirname "$(readlink -f "${0}")")"
+export PATH="$HERE/usr/bin:$PATH"
+exec "$HERE/usr/bin/main.bin" "$@"
+EOF1
+
 chmod +x "$APPDIR/AppRun"
 
 # Create .desktop file
-cat <<EOF > "$APPDIR/${SAFE_NAME}.desktop"
+# EOF2 is unquoted so that ${APPNAME} and ${SAFE_NAME} expand from the current shell.
+cat <<EOF2 > "$APPDIR/${SAFE_NAME}.desktop"
 [Desktop Entry]
 Name=${APPNAME}
 Exec=main
 Icon=${SAFE_NAME}
 Type=Application
 Categories=Utility;
-EOF
+EOF2
 
 # Copy icon (AppImage looks for it in the AppDir root)
 cp "$ICONFILE" "$APPDIR/${SAFE_NAME}.png"
 
+
 # 5. Packaging into AppImage
 export ARCH=x86_64
 $APPIMAGETOOL "$APPDIR" "dist/${APPNAME}_v${VERSION}.AppImage" || error_exit $?
+
+rm app/info.toml
+rm app/LICENSE
 
 echo "Build finished! File: dist/${APPNAME}_v${VERSION}.AppImage"

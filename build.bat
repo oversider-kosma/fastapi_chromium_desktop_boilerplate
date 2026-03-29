@@ -5,7 +5,7 @@ set LANG=en_US.UTF-8
 set LC_ALL=C
 
 if /i "%~1"=="clean" (
-    for /f "usebackq tokens=*" %%a in (`uv run utils.py get_repacked_name`) do set "REPACKED=%%a"
+    for /f "usebackq tokens=*" %%a in (`uv run .\app\utils.py get_repacked_name`) do set "REPACKED=%%a"
 
     echo Cleaning up...
     if exist .nuitka_cache rd /s /q .nuitka_cache
@@ -19,12 +19,16 @@ if /i "%~1"=="clean" (
 echo Build started at %date% %time%
 
 uv sync || goto :error
-uv run utils.py bumb || goto :error
-robocopy "misc\favicon" "frontend\static" favicon.ico >nul 2>&1
 
-for /f "usebackq tokens=*" %%a in (`uv run utils.py get_version`) do set "VERSION=%%a"
-for /f "usebackq tokens=*" %%a in (`uv run utils.py get_name`) do set "APPNAME=%%a"
-for /f "usebackq tokens=*" %%a in (`uv run utils.py get_description`) do set "DESCRIPTION=%%a"
+robocopy ".\resources\favicon" ".\app\frontend\static" favicon.ico >nul 2>&1
+copy /Y ".\LICENSE" ".\app\" >nul 2>&1
+
+uv run prepare_build.py build_info_toml
+uv run .\app\utils.py bumb || goto :error
+for /f "usebackq tokens=*" %%a in (`uv run .\app\utils.py get_version`) do set "VERSION=%%a"
+for /f "usebackq tokens=*" %%a in (`uv run .\app\utils.py get_name`) do set "APPNAME=%%a"
+for /f "usebackq tokens=*" %%a in (`uv run .\app\utils.py get_description`) do set "DESCRIPTION=%%a"
+
 set NUITKA_CACHE_DIR=.nuitka_cache
 
 where ccache >nul 2>nul
@@ -41,24 +45,36 @@ if %errorlevel% neq 0 (
 uv run nuitka ^
     --standalone ^
     --onefile ^
+    ^
     --product-version=%VERSION% ^
     --file-version=%VERSION% ^
     --product-name="%APPNAME%" ^
     --file-description="%DESCRIPTION%" ^
+    ^
     --onefile-tempdir-spec="{CACHE_DIR}/{PRODUCT}/{VERSION}" ^
+    ^
     --jobs=%NUMBER_OF_PROCESSORS% ^
     --assume-yes-for-downloads ^
-    --include-data-dir=frontend=frontend ^
-    --include-data-dir=vendor=vendor ^
-    --include-data-file=pyproject.toml=pyproject.toml ^
-    --include-data-file=.build_no=.build_no ^
+    ^
+    --include-data-dir=.\app\frontend=frontend ^
+    --include-data-dir=.\app\vendor=vendor ^
+    --include-data-file=.\app\info.toml=info.toml ^
+    --include-data-file=.\app\.build_no=.build_no ^
+    --include-data-file=.\app\LICENSE=LICENSE ^
+    ^
     --windows-console-mode=attach ^
-    --onefile-windows-splash-screen-image="misc/splashscreen.png" ^
-    --windows-icon-from-ico=frontend/static/favicon.ico ^
+    --onefile-windows-splash-screen-image="resources/splashscreen.png" ^
+    --windows-icon-from-ico=resources\favicon\favicon.ico ^
+    ^
     --user-plugin=prepare_build.py ^
+    --enable-plugin=tk-inter ^
+    ^
     --output-dir=dist ^
     --output-filename="%APPNAME%_v%VERSION%.exe" ^
-    main.py
+    .\app\main.py
+
+if exist .\app\info.toml del /f /q .\app\info.toml
+if exist .\app\LICENSE del /f /q .\app\LICENSE
 
 if %errorlevel% neq 0 goto :error
 echo Build finished at %date% %time%
